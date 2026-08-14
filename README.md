@@ -46,3 +46,7 @@ That's the minimal version. Before running this for real: The details below appl
 **Ecommerce Order Dead Letter Worker: Scheduled / background work**
 - **Ecommerce Order Dead Letter Worker:** Server-side jobs keep running and **consuming credit** — monitor `GET /v1/account/usage` and set an auto-recharge threshold.
 - **Ecommerce Order Dead Letter Worker:** Make handlers idempotent and use the queue's ack/retry so a redelivery doesn't double-process.
+
+## Further reading
+
+- [Retrying Webhook Jobs: Public HTTPS Delivery or a Polling Worker?](docs/retrying-webhook-jobs-public-https-delivery-or-a-6gm7zd.md)
