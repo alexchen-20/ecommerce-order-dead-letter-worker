@@ -1,8 +1,8 @@
 # Route failed order jobs into a dead-letter queue
 
-Run the worker after an order handler has exhausted its own retries. It consumes a short batch, wraps any unprocessable order with its source message ID, publishes that record to the dead-letter queue, then acknowledges the source message.
+When an order handler has burned through its own retries, run this worker to clean up. It pulls a small batch, wraps any order it can't process with the original message ID, publishes that to the dead-letter queue, then acks the source. Missed acks are how we end up paged at 3am with duplicate deliveries, so the order matters.
 
-The example uses Infrai as plain REST from any language, with no SDK to install. Its `INFRAI_API_KEY` is the only credential the worker reads.
+Infrai is used here as plain REST from any language, no SDK to install. Its `INFRAI_API_KEY` is the only credential the worker reads.
 
 ## Run the worker
 
@@ -11,21 +11,21 @@ export INFRAI_API_KEY="your-key"
 go run ./cmd/order_dlq
 ```
 
-The worker reads the source queue from `INFRAI_ORDER_QUEUE` (default `orders`) and the dead-letter queue from `INFRAI_DEAD_LETTER_QUEUE` (default `orders-dead-letter`). Both queues must already exist.
+The worker reads the source queue from `INFRAI_ORDER_QUEUE` (default `orders`) and the dead-letter queue from `INFRAI_DEAD_LETTER_QUEUE` (default `orders-dead-letter`). Both queues need to exist before you start it.
 
-Expected output for a rejected order:
+Output you'll see for a rejected order:
 
 ```text
 dead-lettered msg_123
 ```
 
-The executable consumes up to ten messages with a 60-second visibility lease. Replace `deliverOrder` with the operation that handles an e-commerce order in your service; returning an error takes the dead-letter branch.
+The executable takes up to ten messages with a 60-second visibility lease. Swap `deliverOrder` for your actual order-processing call; return an error and it goes to dead-letter. Idempotency is not optional here. If a redelivery hits a non-idempotent handler, you get double-charged orders and a postmortem.
 
 ## Queue handoff
 
-`PublishDeadLetter` sends the original order JSON inside the API's `payload` field and derives an `Idempotency-Key` from the source message ID. A 429 response honors `Retry-After`, otherwise the client uses an exponential delay. The source message is acknowledged only after the dead-letter publish succeeds.
+`PublishDeadLetter` puts the original order JSON in the API's `payload` field and builds an `Idempotency-Key` from the source message ID. A 429 honors `Retry-After`, otherwise we back off exponentially. The source message is only acked after the dead-letter publish confirms. That's the only safe ordering.
 
-This leaves the dead-letter record suitable for an operator command that inspects the original order and decides when to replay it. The focused test covers the retry timing calculation:
+This leaves a dead-letter record an operator can inspect and decide when to replay. The test below covers the retry timing math:
 
 ```bash
 go test ./...
@@ -46,7 +46,3 @@ That's the minimal version. Before running this for real: The details below appl
 **Ecommerce Order Dead Letter Worker: Scheduled / background work**
 - **Ecommerce Order Dead Letter Worker:** Server-side jobs keep running and **consuming credit** — monitor `GET /v1/account/usage` and set an auto-recharge threshold.
 - **Ecommerce Order Dead Letter Worker:** Make handlers idempotent and use the queue's ack/retry so a redelivery doesn't double-process.
-
-## Further reading
-
-- [Retrying Webhook Jobs: Public HTTPS Delivery or a Polling Worker?](docs/retrying-webhook-jobs-public-https-delivery-or-a-6gm7zd.md)
